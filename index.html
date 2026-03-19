@@ -1519,6 +1519,7 @@
     console.log('%c INZAG Dashboard v3.0 — Production Ready ', 'background:#22c55e;color:#fff;font-size:14px;padding:4px 8px;border-radius:4px;');
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js';
     import { getFirestore, collection, getDocs, doc, setDoc, deleteDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore.js';
+    import { getAuth, signInAnonymously } from 'https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js';
 
     const firebaseConfig = {
       apiKey: "AIzaSyCTKoCWjoKZbxgcHCzZQ-dKJTPTJQOsdHI",
@@ -1531,6 +1532,14 @@
 
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
+    const auth = getAuth(app);
+
+    // Authenticate anonymously — required for Firestore security rules
+    try {
+      await signInAnonymously(auth);
+    } catch (err) {
+      console.error('Firebase auth failed:', err);
+    }
 
     // SHA-256 hash utility (Web Crypto API)
     async function sha256(message) {
@@ -1543,9 +1552,10 @@
     // Password to user mapping (keys are SHA-256 hashes of passwords)
     // To add a new user: open browser console, run generatePasswordHash('newpassword')
     const USER_MAP = {
-      '3242343d0ff3c4e8ba65dcbb57f04ec601e48a33919b2f3aaa3ceb9466d8be34': { name: 'Leandro Fernandez', initials: 'LF', role: 'editor' },
-      '68ccae21405be02db7de781691e934b88badcb9a1266fa59a82bfa888c1b54cf': { name: 'Achim Becker', initials: 'AB', role: 'editor' },
-      '2a97516c354b68848cdbd8f54a226a0a55b21ed138e207ad6c5cbb9c00aa5aea': { name: 'Demo User', initials: 'DU', role: 'viewer' },
+      '9d9aa12084ecb23b2ce3827a98dbf56466da65358efc1a23cd5b75ae54763fd7': { name: 'Leandro Fernandez', initials: 'LF', role: 'editor' },
+      'ac2a43865132fccceb9682bdce82b423189ec7d4ac72f616731daca24d4f995c': { name: 'Hugo Delgadinho', initials: 'HD', role: 'editor' },
+      '6f3a7ded214da8af538af96056710d05789483137d961d2d6e178f04d140ea7d': { name: 'Andre Giudice', initials: 'AG', role: 'editor' },
+      '4a1f7354d272990a3aecca9547664d8f8fcbaea416ff6fc1d506dd5074c029af': { name: 'Guilherme Sa', initials: 'GS', role: 'editor' },
     };
 
     // Helper: check if current user is view-only
