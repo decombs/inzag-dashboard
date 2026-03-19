@@ -345,6 +345,11 @@
     .ref-table th.drag-over { box-shadow: inset 2px 0 0 var(--accent); }
     .ref-table tr.drag-over-row > td { box-shadow: inset 0 2px 0 var(--accent); }
     .ref-table th.dragging, .ref-table tr.dragging { opacity: 0.4; }
+    .ref-header-actions { display: none; margin-left: 0.25rem; white-space: nowrap; }
+    .ref-table th:hover .ref-header-actions, .ref-table td.row-header:hover .ref-header-actions { display: inline; }
+    .ref-action-btn { background: none; border: none; cursor: pointer; font-size: 0.65rem; padding: 0 2px; opacity: 0.6; }
+    .ref-action-btn:hover { opacity: 1; }
+    .ref-action-del:hover { color: var(--danger); }
 
     /* ── LoI Tracking ── */
     .loi-container { margin-top: 0.5rem; }
@@ -737,9 +742,10 @@
     .project-table .status.financial_contract { background: rgba(249, 115, 22, 0.2); color: #fb923c; }
     .project-table .status.financial_close { background: rgba(59, 130, 246, 0.2); color: #60a5fa; }
     .project-table .status.start_of_construction { background: rgba(34, 197, 94, 0.2); color: var(--success); }
-    .project-table .progress-cell { min-width: 100px; }
-    .project-table .progress-bar-mini { height: 6px; background: var(--border); border-radius: 3px; overflow: hidden; margin-top: 0.25rem; }
-    .project-table .progress-fill-mini { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.2s; }
+    .sortable-th { cursor: pointer; user-select: none; transition: color 0.15s; }
+    .sortable-th:hover { color: var(--accent); }
+    .project-pinned td { border-left: 3px solid var(--accent); }
+    .pin-btn { background: none; border: none; cursor: pointer; font-size: 0.7rem; padding: 0 2px; vertical-align: middle; margin-left: 2px; }
 
     /* Buttons */
     .btn {
@@ -1591,6 +1597,9 @@
     const expandedProjects = new Set();
     const expandedTasks = new Set();
 
+    // Project sort state — survives re-renders
+    let projectSort = { field: 'stage', direction: 'asc' };
+
     // LoI Dashboard filter state — survives re-renders
     const loiFilters = { country: null, bank: null, status: null, stage: null, search: '' };
 
@@ -1696,8 +1705,10 @@
         coveragePercent: project.coveragePercent || 0,
         tenor: project.tenor || 0,
         financialCloseDate: project.financialCloseDate || '',
+        constructionPeriod: project.constructionPeriod || '',
         notes: project.notes || '',
-        archived: project.archived || false
+        archived: project.archived || false,
+        pinned: project.pinned || false
       });
     }
 
@@ -2296,8 +2307,7 @@
       project.eca = (el('eca')?.value || '').trim();
       project.coveragePercent = parseInt(el('coverage')?.value) || 0;
       project.tenor = parseInt(el('tenor')?.value) || 0;
-      project.financialCloseDate = el('fcdate')?.value || '';
-      project.progress = parseInt(el('progress')?.value) || 0;
+      project.constructionPeriod = (el('construction')?.value || '').trim();
       project.notes = (el('notes')?.value || '').trim();
       project.archived = !!el('archived')?.checked;
 
@@ -2452,6 +2462,39 @@
       });
     }
 
+    // ── Sort projects helper ──
+    function sortProjects(projects) {
+      const stageOrder = {};
+      STAGES.forEach((s, i) => stageOrder[s.id] = i);
+      const { field, direction } = projectSort;
+      const dir = direction === 'asc' ? 1 : -1;
+      return [...projects].sort((a, b) => {
+        // Pinned always first
+        const pa = a.pinned ? 0 : 1;
+        const pb = b.pinned ? 0 : 1;
+        if (pa !== pb) return pa - pb;
+        let cmp = 0;
+        if (field === 'stage') {
+          cmp = (stageOrder[a.stage] ?? 99) - (stageOrder[b.stage] ?? 99);
+        } else if (field === 'size') {
+          cmp = (a.sizeMillion || 0) - (b.sizeMillion || 0);
+        } else if (field === 'name' || field === 'client' || field === 'eca') {
+          cmp = (a[field] || '').localeCompare(b[field] || '');
+        }
+        if (cmp === 0) {
+          // Secondary: stage asc then size desc
+          cmp = (stageOrder[a.stage] ?? 99) - (stageOrder[b.stage] ?? 99);
+          if (cmp === 0) cmp = (b.sizeMillion || 0) - (a.sizeMillion || 0);
+        }
+        return cmp * dir;
+      });
+    }
+
+    function sortArrow(field) {
+      if (projectSort.field !== field) return '';
+      return projectSort.direction === 'asc' ? ' ▲' : ' ▼';
+    }
+
     // Pipeline tab: table of all projects across all countries
     function renderPipelineTab() {
       const allProjects = getActiveProjects();
@@ -2461,21 +2504,19 @@
       html += `<div style="font-family:\'JetBrains Mono\',monospace;color:var(--accent);font-size:1.1rem;font-weight:700;">&euro;${totalValue.toFixed(0)}M total &middot; ${allProjects.length} projects</div>`;
       html += '</div>';
       html += '<div class="card"><table class="project-table"><thead><tr>';
-      html += '<th style="width:30px"></th><th>Project</th><th>Size (&euro;M)</th><th>Stage</th><th>Client</th><th>ECA</th><th>LoI Banks</th><th>Progress</th>';
+      html += `<th style="width:30px"></th>`;
+      html += `<th class="sortable-th" data-action="sort-projects" data-field="name">Project${sortArrow('name')}</th>`;
+      html += `<th class="sortable-th" data-action="sort-projects" data-field="size">Size (&euro;M)${sortArrow('size')}</th>`;
+      html += `<th class="sortable-th" data-action="sort-projects" data-field="stage">Stage${sortArrow('stage')}</th>`;
+      html += `<th class="sortable-th" data-action="sort-projects" data-field="client">Client${sortArrow('client')}</th>`;
+      html += `<th class="sortable-th" data-action="sort-projects" data-field="eca">ECA${sortArrow('eca')}</th>`;
+      html += `<th>LoI Banks</th>`;
       html += '</tr></thead><tbody>';
 
-      // Sort by stage order then size descending
-      const stageOrder = {};
-      STAGES.forEach((s, i) => stageOrder[s.id] = i);
-      const sorted = [...allProjects].sort((a, b) => {
-        const sa = stageOrder[a.stage] ?? 99;
-        const sb = stageOrder[b.stage] ?? 99;
-        if (sa !== sb) return sa - sb;
-        return (b.sizeMillion || 0) - (a.sizeMillion || 0);
-      });
+      const sorted = sortProjects(allProjects);
 
       sorted.forEach(p => {
-        html += `<tr data-action="open-project" data-country="${p.countryId}" data-project="${p.id}">`;
+        html += `<tr class="${p.pinned ? 'project-pinned' : ''}" data-action="open-project" data-country="${p.countryId}" data-project="${p.id}">`;
         html += `<td><img class="task-flag" src="${FLAG_URL(p.countryCode)}" alt="${escapeHtml(p.countryName)}"></td>`;
         html += `<td class="name">${escapeHtml(p.name)}</td>`;
         html += `<td class="size">${(p.sizeMillion || 0).toFixed(1)}</td>`;
@@ -2485,7 +2526,6 @@
         const pLois = state.lois.filter(l => l.projectId === p.id);
         const pLoiBanks = [...new Set(pLois.map(l => l.bank).filter(Boolean))];
         html += `<td style="font-size:0.75rem;">${pLoiBanks.length ? escapeHtml(pLoiBanks.join(', ')) : '\u2014'}</td>`;
-        html += `<td class="progress-cell">${p.progress || 0}%<div class="progress-bar-mini"><div class="progress-fill-mini" style="width:${p.progress || 0}%"></div></div></td>`;
         html += `</tr>`;
       });
 
@@ -2718,10 +2758,16 @@
         html += '<div class="empty-state">No projects yet. Click "+ Add Project" to create one.</div>';
       } else {
         html += `<table class="project-table"><thead><tr>`;
-        html += '<th style="width:24px"></th><th>Name</th><th>Size (&euro;M)</th><th>Stage</th><th>Client</th><th>ECA</th><th>Progress</th><th></th>';
+        html += `<th style="width:24px"></th>`;
+        html += `<th class="sortable-th" data-action="sort-projects" data-field="name">Name${sortArrow('name')}</th>`;
+        html += `<th class="sortable-th" data-action="sort-projects" data-field="size">Size (&euro;M)${sortArrow('size')}</th>`;
+        html += `<th class="sortable-th" data-action="sort-projects" data-field="stage">Stage${sortArrow('stage')}</th>`;
+        html += `<th class="sortable-th" data-action="sort-projects" data-field="client">Client${sortArrow('client')}</th>`;
+        html += `<th class="sortable-th" data-action="sort-projects" data-field="eca">ECA${sortArrow('eca')}</th>`;
         html += '</tr></thead><tbody>';
 
-        projects.forEach(p => {
+        const sortedProjects = sortProjects(projects);
+        sortedProjects.forEach(p => {
           const pTodos = todos.filter(t => t.projectId === p.id);
           const pOpen = pTodos.filter(t => !t.done).length;
           const isExp = expandedProjects.has(p.id);
@@ -2729,8 +2775,10 @@
           const stageOpts = STAGES.map(s => `<option value="${s.id}" ${s.id === p.stage ? 'selected' : ''}>${escapeHtml(s.name)}</option>`).join('');
 
           // Project data row
-          html += `<tr class="project-row-expandable" data-action="toggle-expand" data-project="${p.id}">`;
-          html += `<td><span class="project-expand-icon ${isExp ? 'expanded' : ''}">&#9654;</span></td>`;
+          const pinnedCls = p.pinned ? ' project-pinned' : '';
+          html += `<tr class="project-row-expandable${pinnedCls}" data-action="toggle-expand" data-project="${p.id}">`;
+          const pinIcon = p.pinned ? '📌' : '<span style="opacity:0.3">📌</span>';
+          html += `<td><span class="project-expand-icon ${isExp ? 'expanded' : ''}">&#9654;</span>${!isViewer() ? `<button type="button" class="pin-btn" data-action="toggle-pin" data-country="${country.id}" data-project="${p.id}" onclick="event.stopPropagation()" title="${p.pinned ? 'Unpin' : 'Pin to top'}">${pinIcon}</button>` : ''}</td>`;
           const pLois = state.lois.filter(l => l.projectId === p.id);
           const pLoiBanks = [...new Set(pLois.map(l => l.bank).filter(Boolean))];
           const loiBadge = pLoiBanks.length ? ' · LoIs: ' + pLoiBanks.join(', ') : '';
@@ -2739,12 +2787,10 @@
           html += `<td><span class="status ${stageClass(p.stage)}">${escapeHtml(stageLabel(p.stage))}</span></td>`;
           html += `<td>${escapeHtml(p.client || '\u2014')}</td>`;
           html += `<td>${escapeHtml(p.eca || '\u2014')}</td>`;
-          html += `<td class="progress-cell">${p.progress || 0}%<div class="progress-bar-mini"><div class="progress-fill-mini" style="width:${p.progress || 0}%"></div></div></td>`;
-          html += `<td>${isViewer() ? '' : `<button type="button" class="btn btn-ghost btn-small btn-danger" data-action="delete-project" data-country="${country.id}" data-project="${p.id}" onclick="event.stopPropagation()">Remove</button>`}</td>`;
           html += `</tr>`;
 
           // Expanded section: inline project edit + tasks
-          html += `<tr class="project-expanded-row ${isExp ? 'expanded' : ''}"><td colspan="8"><div class="project-expanded-inner">`;
+          html += `<tr class="project-expanded-row ${isExp ? 'expanded' : ''}"><td colspan="6"><div class="project-expanded-inner">`;
 
           // Inline project edit form (hidden for viewers)
           if (!isViewer()) {
@@ -2756,13 +2802,12 @@
             html += `<div><label>Stage</label><select id="${prefix}-stage">${stageOpts}</select></div>`;
             html += `<div><label>ECA</label><input id="${prefix}-eca" value="${escapeHtml(p.eca || '')}"></div>`;
             html += `<div><label>Coverage %</label><input type="number" min="0" max="100" id="${prefix}-coverage" value="${p.coveragePercent || 0}"></div>`;
-            html += `<div><label>Progress %</label><input type="number" min="0" max="100" id="${prefix}-progress" value="${p.progress || 0}"></div>`;
             html += `<div><label>Tenor (years)</label><input type="number" id="${prefix}-tenor" value="${p.tenor || 0}"></div>`;
-            html += `<div><label>Financial Close</label><input type="date" id="${prefix}-fcdate" value="${p.financialCloseDate || ''}"></div>`;
+            html += `<div class="col-span-2"><label>Construction Period</label><input id="${prefix}-construction" value="${escapeHtml(p.constructionPeriod || '')}" placeholder="e.g. 24 months / Q3 2026 – Q1 2028"></div>`;
             html += `<div class="col-span-2"><label>Notes</label><textarea id="${prefix}-notes">${escapeHtml(p.notes || '')}</textarea></div>`;
             html += `<div><label>Archived</label><input type="checkbox" id="${prefix}-archived" ${p.archived ? 'checked' : ''} style="width:auto;margin-top:0.4rem;"></div>`;
             html += `</div>`;
-            html += `<div class="inline-edit-actions"><button type="button" class="btn btn-primary btn-small" onclick="event.stopPropagation();saveProjectInline('${country.id}','${p.id}')">Save Project</button></div>`;
+            html += `<div class="inline-edit-actions"><button type="button" class="btn btn-primary btn-small" onclick="event.stopPropagation();saveProjectInline('${country.id}','${p.id}')">Save Project</button> <button type="button" class="btn btn-ghost btn-small btn-danger" data-action="delete-project" data-country="${country.id}" data-project="${p.id}" onclick="event.stopPropagation()">Remove Project</button></div>`;
             html += `</div>`;
           }
 
@@ -2781,6 +2826,28 @@
           }
           if (!isViewer()) {
             html += `<button type="button" class="btn btn-ghost btn-small gantt-add-task" style="margin-top:0.5rem;" data-action="add-todo-for-project" data-country="${country.id}" data-project="${p.id}">+ Add Task</button>`;
+          }
+          html += `</div>`;
+
+          // LoIs section in expanded view
+          const projLois = state.lois.filter(l => l.projectId === p.id);
+          html += `<div class="inline-edit-section"><h4>Letters of Intent (${projLois.length})</h4>`;
+          if (projLois.length > 0) {
+            html += '<table class="loi-table" style="font-size:0.85rem;"><thead><tr><th>Bank</th><th>Amount</th><th>Tenor</th><th>Margin</th><th>Status</th><th>Date</th></tr></thead><tbody>';
+            projLois.forEach(l => {
+              const statusCls = 'loi-status-' + (l.status || '').toLowerCase();
+              html += `<tr>`;
+              html += `<td>${escapeHtml(l.bank || '\u2014')}</td>`;
+              html += `<td>${l.amount ? '\u20AC' + escapeHtml(l.amount) + 'M' : '\u2014'}</td>`;
+              html += `<td>${escapeHtml(l.tenor || '\u2014')}</td>`;
+              html += `<td>${escapeHtml(l.margin || '\u2014')}</td>`;
+              html += `<td><span class="${statusCls}">${escapeHtml(l.status || '\u2014')}</span></td>`;
+              html += `<td>${escapeHtml(l.date || '\u2014')}</td>`;
+              html += `</tr>`;
+            });
+            html += '</tbody></table>';
+          } else {
+            html += '<div style="color:var(--text-muted);font-size:0.85rem;padding:0.25rem 0;">No letters of intent yet.</div>';
           }
           html += `</div>`;
 
@@ -2838,7 +2905,14 @@
       // Header row: draggable column headers + inline "add column" input
       html += '<thead><tr><th class="row-header"></th>';
       columns.forEach((col, ci) => {
-        html += `<th draggable="true" data-table="${tableId}" data-col="${ci}">${escapeHtml(col)}</th>`;
+        html += `<th draggable="true" data-table="${tableId}" data-col="${ci}"><span class="ref-header-text">${escapeHtml(col)}</span>`;
+        if (!isViewer()) {
+          html += `<span class="ref-header-actions">`;
+          html += `<button type="button" class="ref-action-btn" data-action="ref-rename-col" data-table="${tableId}" data-col="${ci}" title="Rename">✏️</button>`;
+          html += `<button type="button" class="ref-action-btn ref-action-del" data-action="ref-delete-col" data-table="${tableId}" data-col="${ci}" title="Delete">✕</button>`;
+          html += `</span>`;
+        }
+        html += `</th>`;
       });
       // Inline add-column input
       html += `<th style="min-width:100px"><input type="text" class="ref-new-input ref-new-col" data-table="${tableId}" placeholder="+ New\u2026"></th>`;
@@ -2847,7 +2921,14 @@
       // Each row = attribute (draggable row headers)
       rows.forEach((rowName, ri) => {
         html += `<tr data-table="${tableId}" data-row="${ri}">`;
-        html += `<td class="row-header" draggable="true" data-table="${tableId}" data-row="${ri}">${escapeHtml(rowName)}</td>`;
+        html += `<td class="row-header" draggable="true" data-table="${tableId}" data-row="${ri}"><span class="ref-header-text">${escapeHtml(rowName)}</span>`;
+        if (!isViewer()) {
+          html += `<span class="ref-header-actions">`;
+          html += `<button type="button" class="ref-action-btn" data-action="ref-rename-row" data-table="${tableId}" data-row="${ri}" title="Rename">✏️</button>`;
+          html += `<button type="button" class="ref-action-btn ref-action-del" data-action="ref-delete-row" data-table="${tableId}" data-row="${ri}" title="Delete">✕</button>`;
+          html += `</span>`;
+        }
+        html += `</td>`;
         columns.forEach((col, ci) => {
           const key = rowName + '|' + col;
           const val = cells[key] || '';
@@ -3662,6 +3743,10 @@
       if (sectionId === 'ecas') renderECAsTab();
       if (sectionId === 'banks') renderBanksTab();
       if (sectionId === 'lois') renderLoiTab();
+      // Hide bottom tabs when LoI section is active (it has its own complete view)
+      const isLoiActive = sectionId === 'lois';
+      document.getElementById('tabNav').style.display = isLoiActive ? 'none' : '';
+      document.getElementById('tabContent').style.display = isLoiActive ? 'none' : '';
       // Wire up interactive features after DOM is updated
       if (sectionId === 'ecas' || sectionId === 'banks') {
         setTimeout(() => { setupRefInlineAdd(); setupRefDrag(); }, 0);
@@ -3785,8 +3870,7 @@
       html += `<div class="modal-detail-field"><div class="field-label">ECA</div><div class="field-value">${escapeHtml(project.eca || '\u2014')}</div></div>`;
       html += `<div class="modal-detail-field"><div class="field-label">Coverage</div><div class="field-value">${project.coveragePercent || 0}%</div></div>`;
       html += `<div class="modal-detail-field"><div class="field-label">Tenor</div><div class="field-value">${project.tenor ? project.tenor + ' years' : '\u2014'}</div></div>`;
-      html += `<div class="modal-detail-field"><div class="field-label">Progress</div><div class="field-value">${project.progress || 0}%</div></div>`;
-      html += `<div class="modal-detail-field"><div class="field-label">Financial Close</div><div class="field-value">${escapeHtml(project.financialCloseDate || '\u2014')}</div></div>`;
+      html += `<div class="modal-detail-field"><div class="field-label">Construction Period</div><div class="field-value">${escapeHtml(project.constructionPeriod || '\u2014')}</div></div>`;
       html += '</div>';
 
       // Notes
@@ -3833,7 +3917,7 @@
       // Actions
       let actionsHtml = '';
       if (!isViewer()) {
-        actionsHtml += `<button class="btn btn-primary btn-small" onclick="closeProjectModal();switchTab('country-${countryId}');expandedProjects.add('${projectId}');render();">Edit Project</button>`;
+        actionsHtml += `<button class="btn btn-primary btn-small" data-action="edit-from-modal" data-country="${countryId}" data-project="${projectId}">Edit Project</button>`;
       }
       actionsHtml += '<button class="btn btn-ghost btn-small" onclick="closeProjectModal()">Close</button>';
       document.getElementById('modalProjectActions').innerHTML = actionsHtml;
@@ -3871,13 +3955,26 @@
       const WRITE_ACTIONS = ['add-project', 'delete-project', 'add-todo', 'add-todo-for-project',
         'toggle-todo', 'delete-todo', 'save-project-inline', 'save-task-inline',
         'delete-task-inline', 'add-loi', 'delete-loi', 'archive-project', 'unarchive-project',
-        'ref-edit-cell', 'loi-edit-cell'];
+        'ref-edit-cell', 'loi-edit-cell',
+        'ref-rename-col', 'ref-delete-col', 'ref-rename-row', 'ref-delete-row', 'toggle-pin'];
       if (WRITE_ACTIONS.includes(action) && isViewer()) {
         e.stopPropagation();
         showToast('View-only access — you cannot make changes.', 'error');
         return;
       }
 
+      if (action === 'sort-projects') {
+        e.stopPropagation();
+        const field = el.getAttribute('data-field');
+        if (projectSort.field === field) {
+          projectSort.direction = projectSort.direction === 'asc' ? 'desc' : 'asc';
+        } else {
+          projectSort.field = field;
+          projectSort.direction = 'asc';
+        }
+        render();
+        return;
+      }
       if (action === 'add-project') { e.stopPropagation(); await addProject(countryId); }
       if (action === 'delete-project') { e.stopPropagation(); await deleteProject(countryId, projectId); }
       if (action === 'add-todo') await addTodo(countryId);
@@ -3905,12 +4002,115 @@
         e.stopPropagation();
         openProjectModal(countryId, projectId);
       }
+      if (action === 'edit-from-modal') {
+        e.stopPropagation();
+        closeProjectModal();
+        expandedProjects.add(projectId);
+        switchTab('country-' + countryId);
+      }
+      if (action === 'toggle-pin') {
+        e.stopPropagation();
+        const projects = state.projects[countryId] || [];
+        const project = projects.find(p => p.id === projectId);
+        if (!project) return;
+        project.pinned = !project.pinned;
+        isSaving = true;
+        try {
+          await saveProjectToFirebase(countryId, project);
+          showToast(project.pinned ? 'Project pinned' : 'Project unpinned');
+        } catch(err) {
+          showToast('Save failed: ' + err.message, 'error');
+        } finally {
+          isSaving = false;
+          _saveCooldownUntil = Date.now() + 2000;
+        }
+        render();
+      }
 
       // ── Reference table actions ──
       if (action === 'ref-edit-cell') {
         e.stopPropagation();
         if (el.querySelector('select') || el.querySelector('input')) return;
         startCellEdit(el);
+      }
+      if (action === 'ref-rename-col') {
+        e.stopPropagation();
+        const tblId = el.getAttribute('data-table');
+        const ci = parseInt(el.getAttribute('data-col'));
+        const tableData = getTableDataRef(tblId);
+        if (!tableData) return;
+        const oldName = tableData.columns[ci];
+        const newName = prompt('Rename column:', oldName);
+        if (!newName || newName.trim() === '' || newName.trim() === oldName) return;
+        const trimmed = newName.trim();
+        // Update cell keys
+        const newCells = {};
+        for (const [key, val] of Object.entries(tableData.cells)) {
+          const [rowKey, colKey] = key.split('|');
+          newCells[rowKey + '|' + (colKey === oldName ? trimmed : colKey)] = val;
+        }
+        tableData.cells = newCells;
+        tableData.columns[ci] = trimmed;
+        saveRefTableToFirebase(getTableFirebaseCollection(tblId), tableData);
+        renderSectionContent();
+        showToast(`Column renamed to "${trimmed}"`);
+      }
+      if (action === 'ref-delete-col') {
+        e.stopPropagation();
+        const tblId = el.getAttribute('data-table');
+        const ci = parseInt(el.getAttribute('data-col'));
+        const tableData = getTableDataRef(tblId);
+        if (!tableData) return;
+        const colName = tableData.columns[ci];
+        if (!confirm(`Delete column "${colName}"? This cannot be undone.`)) return;
+        tableData.columns.splice(ci, 1);
+        const newCells = {};
+        for (const [key, val] of Object.entries(tableData.cells)) {
+          if (!key.endsWith('|' + colName)) newCells[key] = val;
+        }
+        tableData.cells = newCells;
+        saveRefTableToFirebase(getTableFirebaseCollection(tblId), tableData);
+        renderSectionContent();
+        showToast(`Column "${colName}" deleted`);
+      }
+      if (action === 'ref-rename-row') {
+        e.stopPropagation();
+        const tblId = el.getAttribute('data-table');
+        const ri = parseInt(el.getAttribute('data-row'));
+        const tableData = getTableDataRef(tblId);
+        if (!tableData) return;
+        const oldName = tableData.rows[ri];
+        const newName = prompt('Rename row:', oldName);
+        if (!newName || newName.trim() === '' || newName.trim() === oldName) return;
+        const trimmed = newName.trim();
+        const newCells = {};
+        for (const [key, val] of Object.entries(tableData.cells)) {
+          const [rowKey, colKey] = key.split('|');
+          newCells[(rowKey === oldName ? trimmed : rowKey) + '|' + colKey] = val;
+        }
+        tableData.cells = newCells;
+        tableData.rows[ri] = trimmed;
+        saveRefTableToFirebase(getTableFirebaseCollection(tblId), tableData);
+        renderSectionContent();
+        showToast(`Row renamed to "${trimmed}"`);
+      }
+      if (action === 'ref-delete-row') {
+        e.stopPropagation();
+        const tblId = el.getAttribute('data-table');
+        const ri = parseInt(el.getAttribute('data-row'));
+        const tableData = getTableDataRef(tblId);
+        if (!tableData) return;
+        const rowName = tableData.rows[ri];
+        if (!confirm(`Delete row "${rowName}"? This cannot be undone.`)) return;
+        tableData.rows.splice(ri, 1);
+        const newCells = {};
+        for (const [key, val] of Object.entries(tableData.cells)) {
+          if (!key.startsWith(rowName + '|')) newCells[key] = val;
+        }
+        tableData.cells = newCells;
+        saveRefTableToFirebase(getTableFirebaseCollection(tblId), tableData);
+        renderSectionContent();
+        showToast(`Row "${rowName}" deleted`);
       }
 
       // ── LoI actions ──
@@ -4024,6 +4224,7 @@
     window.saveTaskInline = saveTaskInline;
     window.deleteTaskInline = deleteTaskInline;
     window.saveProjectInline = saveProjectInline;
+    window.switchTab = switchTab;
     window._state = state;
     window._expandedProjects = expandedProjects;
     window._expandedTasks = expandedTasks;
