@@ -1322,7 +1322,10 @@
           <div class="header-user-role">Export Finance Dashboard</div>
         </div>
       </div>
-      <button type="button" class="btn btn-ghost btn-small" id="printBtn" onclick="window.print()" title="Print pipeline report" style="font-size:0.75rem;">Print Report</button>
+      <div style="display:flex;gap:0.5rem;align-items:center;">
+        <button type="button" class="btn btn-ghost btn-small" id="printBtn" onclick="window.print()" title="Print pipeline report" style="font-size:0.75rem;">Print Report</button>
+        <button type="button" class="btn btn-ghost btn-small" data-action="logoff" title="Sign out" style="font-size:0.75rem;">Sign Out</button>
+      </div>
     </header>
 
     <!-- Top section with sub-tabs -->
@@ -4011,6 +4014,14 @@
         finally { isSaving = false; _saveCooldownUntil = Date.now() + 2000; }
         renderLoiTab();
         render();
+      }
+
+      if (action === 'logoff') {
+        e.stopPropagation();
+        localStorage.removeItem(STORAGE_KEY);
+        state.currentUser = null;
+        location.reload();
+        return;
       }
 
       // ── LoI Dashboard interactive filtering ──
