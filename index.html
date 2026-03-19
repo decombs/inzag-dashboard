@@ -2778,7 +2778,7 @@
           const pinnedCls = p.pinned ? ' project-pinned' : '';
           html += `<tr class="project-row-expandable${pinnedCls}" data-action="toggle-expand" data-project="${p.id}">`;
           const pinIcon = p.pinned ? '📌' : '<span style="opacity:0.3">📌</span>';
-          html += `<td><span class="project-expand-icon ${isExp ? 'expanded' : ''}">&#9654;</span>${!isViewer() ? `<button type="button" class="pin-btn" data-action="toggle-pin" data-country="${country.id}" data-project="${p.id}" onclick="event.stopPropagation()" title="${p.pinned ? 'Unpin' : 'Pin to top'}">${pinIcon}</button>` : ''}</td>`;
+          html += `<td><span class="project-expand-icon ${isExp ? 'expanded' : ''}">&#9654;</span>${!isViewer() ? `<button type="button" class="pin-btn" data-action="toggle-pin" data-country="${country.id}" data-project="${p.id}" title="${p.pinned ? 'Unpin' : 'Pin to top'}">${pinIcon}</button>` : ''}</td>`;
           const pLois = state.lois.filter(l => l.projectId === p.id);
           const pLoiBanks = [...new Set(pLois.map(l => l.bank).filter(Boolean))];
           const loiBadge = pLoiBanks.length ? ' · LoIs: ' + pLoiBanks.join(', ') : '';
